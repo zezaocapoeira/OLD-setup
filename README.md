@@ -3,6 +3,16 @@
 =======
 # dwm-6.0-multi.patch
 
+Sobre o DWM:
+
+- http://dwm.suckless.org/
+
+Download do DWM:
+
+- http://dl.suckless.org/dwm/dwm-6.0.tar.gz
+
+
+
 Descompacte o source "dwm-6.0.tar.gz" e entre no diretório "dwm-6.0" e aplique o patch :
 
 ````
