@@ -1,0 +1,161 @@
+diff -rupN dmenu-4.6-original/arg.h dmenu-4.6-patched/arg.h
+--- dmenu-4.6-original/arg.h	2015-11-08 20:42:21.000000000 -0200
++++ dmenu-4.6-patched/arg.h	2016-06-06 16:09:20.152042440 -0300
+@@ -10,8 +10,8 @@ extern char *argv0;
+ 
+ /* use main(int argc, char *argv[]) */
+ #define ARGBEGIN	for (argv0 = *argv, argv++, argc--;\
+-					argv[0] && argv[0][1]\
+-					&& argv[0][0] == '-';\
++					argv[0] && argv[0][0] == '-'\
++					&& argv[0][1];\
+ 					argc--, argv++) {\
+ 				char argc_;\
+ 				char **argv_;\
+diff -rupN dmenu-4.6-original/config.def.h dmenu-4.6-patched/config.def.h
+--- dmenu-4.6-original/config.def.h	2015-11-08 20:42:21.000000000 -0200
++++ dmenu-4.6-patched/config.def.h	2016-06-06 16:09:20.152042440 -0300
+@@ -6,7 +6,7 @@ static int topbar = 1;
+ static const char *fonts[] = {
+ 	"monospace:size=10"
+ };
+-static const char *prompt      = NULL;      /* -p  option; prompt to the elft of input field */
++static const char *prompt      = NULL;      /* -p  option; prompt to the left of input field */
+ static const char *normbgcolor = "#222222"; /* -nb option; normal background                 */
+ static const char *normfgcolor = "#bbbbbb"; /* -nf option; normal foreground                 */
+ static const char *selbgcolor  = "#005577"; /* -sb option; selected background               */
+@@ -15,3 +15,9 @@ static const char *outbgcolor  = "#00fff
+ static const char *outfgcolor  = "#000000";
+ /* -l option; if nonzero, dmenu uses vertical list with given number of lines */
+ static unsigned int lines      = 0;
++
++/*
++ * Characters not considered part of a word while deleting words
++ * for example: " /?\"&[]"
++ */
++static const char worddelimiters[] = " ";
+diff -rupN dmenu-4.6-original/config.mk dmenu-4.6-patched/config.mk
+--- dmenu-4.6-original/config.mk	2015-11-08 20:42:21.000000000 -0200
++++ dmenu-4.6-patched/config.mk	2016-06-06 16:15:24.797058710 -0300
+@@ -4,6 +4,7 @@ VERSION = 4.6
+ # paths
+ PREFIX = /usr/local
+ MANPREFIX = ${PREFIX}/share/man
++LIBDIR = /usr/local/lib
+ 
+ X11INC = /usr/X11R6/include
+ X11LIB = /usr/X11R6/lib
+@@ -20,11 +21,12 @@ FREETYPEINC = ${X11INC}/freetype2
+ 
+ # includes and libs
+ INCS = -I${X11INC} -I${FREETYPEINC}
+-LIBS = -L${X11LIB} -lX11 ${XINERAMALIBS} ${FREETYPELIBS}
++LIBS = -L${LIBDIR} -L${X11LIB} -lX11 ${XINERAMALIBS} ${FREETYPELIBS}
+ 
+ # flags
++OPTS ?= -Os
+ CPPFLAGS = -D_BSD_SOURCE -D_XOPEN_SOURCE=700 -D_POSIX_C_SOURCE=200809L -DVERSION=\"${VERSION}\" ${XINERAMAFLAGS}
+-CFLAGS   = -std=c99 -pedantic -Wall -Os ${INCS} ${CPPFLAGS}
++CFLAGS   = -std=c99 -pedantic -Wall ${OPTS} ${INCS} ${CPPFLAGS}
+ LDFLAGS  = -s ${LIBS}
+ 
+ # compiler and linker
+diff -rupN dmenu-4.6-original/dmenu.1 dmenu-4.6-patched/dmenu.1
+--- dmenu-4.6-original/dmenu.1	2015-11-08 20:42:21.000000000 -0200
++++ dmenu-4.6-patched/dmenu.1	2016-06-06 16:09:20.152042440 -0300
+@@ -51,6 +51,24 @@ dmenu matches menu items case insensitiv
+ .BI \-l " lines"
+ dmenu lists items vertically, with the given number of lines.
+ .TP
++.BI \-x " xoffset"
++dmenu is placed at this offset measured from the left side of the monitor.
++Can be negative.
++If option
++.B \-m
++is present, the measurement will use the given monitor.
++.TP
++.BI \-y " yoffset"
++dmenu is placed at this offset measured from the top of the monitor.  If the
++.B \-b
++option is used, the offset is measured from the bottom.  Can be negative.
++If option
++.B \-m
++is present, the measurement will use the given monitor.
++.TP
++.BI \-w " width"
++sets the width of the dmenu window.
++.TP
+ .BI \-m " monitor"
+ dmenu is displayed on the monitor number supplied. Monitor numbers are starting
+ from 0.
+diff -rupN dmenu-4.6-original/dmenu.c dmenu-4.6-patched/dmenu.c
+--- dmenu-4.6-original/dmenu.c	2015-11-08 20:42:21.000000000 -0200
++++ dmenu-4.6-patched/dmenu.c	2016-06-06 16:09:20.153042440 -0300
+@@ -37,6 +37,9 @@ struct item {
+ static char text[BUFSIZ] = "";
+ static int bh, mw, mh;
+ static int sw, sh; /* X display screen geometry width, height */
++static int dmx = 0; /* put dmenu at this x offset */
++static int dmy = 0; /* put dmenu at this y offset (measured from the bottom if topbar is 0) */
++static unsigned int dmw = 0; /* make dmenu this wide */
+ static int inputw, promptw;
+ static size_t cursor;
+ static struct item *items = NULL;
+@@ -314,9 +317,11 @@ keypress(XKeyEvent *ev)
+ 			insert(NULL, 0 - cursor);
+ 			break;
+ 		case XK_w: /* delete word */
+-			while (cursor > 0 && text[nextrune(-1)] == ' ')
++			while (cursor > 0 && strchr(worddelimiters,
++			       text[nextrune(-1)]))
+ 				insert(NULL, nextrune(-1) - cursor);
+-			while (cursor > 0 && text[nextrune(-1)] != ' ')
++			while (cursor > 0 && !strchr(worddelimiters,
++			       text[nextrune(-1)]))
+ 				insert(NULL, nextrune(-1) - cursor);
+ 			break;
+ 		case XK_y: /* paste selection */
+@@ -571,16 +576,16 @@ setup(void)
+ 				if (INTERSECT(x, y, 1, 1, info[i]))
+ 					break;
+ 
+-		x = info[i].x_org;
+-		y = info[i].y_org + (topbar ? 0 : info[i].height - mh);
+-		mw = info[i].width;
++		x = info[i].x_org + dmx;
++		y = info[i].y_org + (topbar ? dmy : info[i].height - mh - dmy);
++		mw = (dmw>0 ? dmw : info[i].width);
+ 		XFree(info);
+ 	} else
+ #endif
+ 	{
+-		x = 0;
+-		y = topbar ? 0 : sh - mh;
+-		mw = sw;
++		x = dmx;
++		y = topbar ? dmy : sh - mh - dmy;
++		mw = (dmw>0 ? dmw : sw);
+ 	}
+ 	promptw = (prompt && *prompt) ? TEXTW(prompt) : 0;
+ 	inputw = MIN(inputw, mw/3);
+@@ -609,6 +614,7 @@ static void
+ usage(void)
+ {
+ 	fputs("usage: dmenu [-b] [-f] [-i] [-l lines] [-p prompt] [-fn font] [-m monitor]\n"
++	      "             [-x xoffset] [-y yoffset] [-w width]\n"
+ 	      "             [-nb color] [-nf color] [-sb color] [-sf color] [-v]\n", stderr);
+ 	exit(1);
+ }
+@@ -635,6 +641,12 @@ main(int argc, char *argv[])
+ 		/* these options take one argument */
+ 		else if (!strcmp(argv[i], "-l"))   /* number of lines in vertical list */
+ 			lines = atoi(argv[++i]);
++		else if (!strcmp(argv[i], "-x"))   /* window x offset */
++			dmx = atoi(argv[++i]);
++		else if (!strcmp(argv[i], "-y"))   /* window y offset (from bottom up if -b) */
++			dmy = atoi(argv[++i]);
++		else if (!strcmp(argv[i], "-w"))   /* make dmenu this wide */
++			dmw = atoi(argv[++i]);
+ 		else if (!strcmp(argv[i], "-m"))
+ 			mon = atoi(argv[++i]);
+ 		else if (!strcmp(argv[i], "-p"))   /* adds prompt to left of input field */
