@@ -38,11 +38,12 @@ static const char *dmenucmd[] = { "dmenu_run", "-i", "-l", "8", "-o", "0.9", "-f
 ````
 # Screenshot
 
-![DWM-patch](https://raw.githubusercontent.com/zezaocapoeira/DWM-patch/master/screenshot/dwm-screen1.png)
+![DWM-patch](https://raw.githubusercontent.com/zezaocapoeira/DWM-patch/master/dwm-6.0/screenshot/dwm-screen1.png)
 
-![DWM-patch](https://raw.githubusercontent.com/zezaocapoeira/DWM-patch/master/screenshot/dwm-screen2.png)
+![DWM-patch](https://raw.githubusercontent.com/zezaocapoeira/DWM-patch/master/dwm-6.0/screenshot/dwm-screen2.png)
 
-![DWM-patch](https://raw.githubusercontent.com/zezaocapoeira/DWM-patch/master/screenshot/dwm-screen3.png)
-
-
+<<<<<<< HEAD
 >>>>>>> 82bb956 (added)
+=======
+![DWM-patch](https://raw.githubusercontent.com/zezaocapoeira/DWM-patch/master/dwm-6.0/screenshot/dwm-screen3.png)
+>>>>>>> e04b23c (movido para um diretório)
