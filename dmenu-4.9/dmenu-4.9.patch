@@ -1,0 +1,154 @@
+diff -rupN dmenu-4.9-original/config.mk dmenu-4.9-patched/config.mk
+--- dmenu-4.9-original/config.mk	2019-02-02 10:55:02.000000000 -0200
++++ dmenu-4.9-patched/config.mk	2019-02-21 04:57:46.989444710 -0300
+@@ -4,6 +4,7 @@ VERSION = 4.9
+ # paths
+ PREFIX = /usr/local
+ MANPREFIX = $(PREFIX)/share/man
++LIBDIR = /usr/local/lib
+ 
+ X11INC = /usr/X11R6/include
+ X11LIB = /usr/X11R6/lib
+@@ -20,11 +21,11 @@ FREETYPEINC = /usr/include/freetype2
+ 
+ # includes and libs
+ INCS = -I$(X11INC) -I$(FREETYPEINC)
+-LIBS = -L$(X11LIB) -lX11 $(XINERAMALIBS) $(FREETYPELIBS)
++LIBS = -L${LIBDIR} -L${X11LIB} -lX11 ${XINERAMALIBS} ${FREETYPELIBS}
+ 
+ # flags
+ CPPFLAGS = -D_DEFAULT_SOURCE -D_BSD_SOURCE -D_XOPEN_SOURCE=700 -D_POSIX_C_SOURCE=200809L -DVERSION=\"$(VERSION)\" $(XINERAMAFLAGS)
+-CFLAGS   = -std=c99 -pedantic -Wall -Os $(INCS) $(CPPFLAGS)
++CFLAGS   = -std=c99 -pedantic -Wall ${OPTS} ${INCS} ${CPPFLAGS}
+ LDFLAGS  = $(LIBS)
+ 
+ # compiler and linker
+diff -rupN dmenu-4.9-original/dmenu.1 dmenu-4.9-patched/dmenu.1
+--- dmenu-4.9-original/dmenu.1	2019-02-02 10:55:02.000000000 -0200
++++ dmenu-4.9-patched/dmenu.1	2019-02-21 04:58:55.113440110 -0300
+@@ -50,6 +50,24 @@ dmenu matches menu items case insensitiv
+ .BI \-l " lines"
+ dmenu lists items vertically, with the given number of lines.
+ .TP
++.BI \-x " xoffset"
++dmenu is placed at this offset measured from the left side of the monitor.
++Can be negative.
++If option
++.B \-m
++is present, the measurement will use the given monitor.
++.TP
++.BI \-y " yoffset"
++dmenu is placed at this offset measured from the top of the monitor.  If the
++.B \-b
++option is used, the offset is measured from the bottom.  Can be negative.
++If option
++.B \-m
++is present, the measurement will use the given monitor.
++.TP
++.BI \-w " width"
++sets the width of the dmenu window.
++.TP
+ .BI \-m " monitor"
+ dmenu is displayed on the monitor number supplied. Monitor numbers are starting
+ from 0.
+diff -rupN dmenu-4.9-original/dmenu.c dmenu-4.9-patched/dmenu.c
+--- dmenu-4.9-original/dmenu.c	2019-02-02 10:55:02.000000000 -0200
++++ dmenu-4.9-patched/dmenu.c	2019-02-21 05:05:55.217411742 -0300
+@@ -37,6 +37,9 @@ struct item {
+ static char text[BUFSIZ] = "";
+ static char *embed;
+ static int bh, mw, mh;
++static int dmx = 0; /* put dmenu at this x offset */
++static int dmy = 0; /* put dmenu at this y offset (measured from the bottom if topbar is 0) */
++static unsigned int dmw = 0; /* make dmenu this wide */
+ static int inputw = 0, promptw;
+ static int lrpad; /* sum of left and right padding */
+ static size_t cursor;
+@@ -632,9 +635,10 @@ setup(void)
+ 				if (INTERSECT(x, y, 1, 1, info[i]))
+ 					break;
+ 
+-		x = info[i].x_org;
+-		y = info[i].y_org + (topbar ? 0 : info[i].height - mh);
+-		mw = info[i].width;
++		x = info[i].x_org + dmx;
++		y = info[i].y_org + (topbar ? dmy : info[i].height - mh - dmy);
++		mw = (dmw>0 ? dmw : info[i].width);
++
+ 		XFree(info);
+ 	} else
+ #endif
+@@ -642,9 +646,9 @@ setup(void)
+ 		if (!XGetWindowAttributes(dpy, parentwin, &wa))
+ 			die("could not get embedding window attributes: 0x%lx",
+ 			    parentwin);
+-		x = 0;
+-		y = topbar ? 0 : wa.height - mh;
+-		mw = wa.width;
++		x = dmx;
++		y = topbar ? dmy : wa.height - mh - dmy;
++		mw = (dmw>0 ? dmw : wa.width);
+ 	}
+ 	promptw = (prompt && *prompt) ? TEXTW(prompt) - lrpad / 4 : 0;
+ 	inputw = MIN(inputw, mw/3);
+@@ -683,6 +687,7 @@ static void
+ usage(void)
+ {
+ 	fputs("usage: dmenu [-bfiv] [-l lines] [-p prompt] [-fn font] [-m monitor]\n"
++          "              [-x xoffset] [-y yoffset] [-w width]\n"
+ 	      "             [-nb color] [-nf color] [-sb color] [-sf color] [-w windowid]\n", stderr);
+ 	exit(1);
+ }
+@@ -710,6 +715,12 @@ main(int argc, char *argv[])
+ 		/* these options take one argument */
+ 		else if (!strcmp(argv[i], "-l"))   /* number of lines in vertical list */
+ 			lines = atoi(argv[++i]);
++		else if (!strcmp(argv[i], "-x"))   /* window x offset */
++			dmx = atoi(argv[++i]);
++		else if (!strcmp(argv[i], "-y"))   /* window y offset (from bottom up if -b) */
++			dmy = atoi(argv[++i]);
++		else if (!strcmp(argv[i], "-w"))   /* make dmenu this wide */
++			dmw = atoi(argv[++i]);
+ 		else if (!strcmp(argv[i], "-m"))
+ 			mon = atoi(argv[++i]);
+ 		else if (!strcmp(argv[i], "-p"))   /* adds prompt to left of input field */
+diff -rupN dmenu-4.9-original/drw.c dmenu-4.9-patched/drw.c
+--- dmenu-4.9-original/drw.c	2019-02-02 10:55:02.000000000 -0200
++++ dmenu-4.9-patched/drw.c	2019-02-21 04:56:05.654451553 -0300
+@@ -132,19 +132,6 @@ xfont_create(Drw *drw, const char *fontn
+ 		die("no font specified.");
+ 	}
+ 
+-	/* Do not allow using color fonts. This is a workaround for a BadLength
+-	 * error from Xft with color glyphs. Modelled on the Xterm workaround. See
+-	 * https://bugzilla.redhat.com/show_bug.cgi?id=1498269
+-	 * https://lists.suckless.org/dev/1701/30932.html
+-	 * https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=916349
+-	 * and lots more all over the internet.
+-	 */
+-	FcBool iscol;
+-	if(FcPatternGetBool(xfont->pattern, FC_COLOR, 0, &iscol) == FcResultMatch && iscol) {
+-		XftFontClose(drw->dpy, xfont);
+-		return NULL;
+-	}
+-
+ 	font = ecalloc(1, sizeof(Fnt));
+ 	font->xfont = xfont;
+ 	font->pattern = pattern;
+@@ -213,7 +200,7 @@ drw_scm_create(Drw *drw, const char *clr
+ 	Clr *ret;
+ 
+ 	/* need at least two colors for a scheme */
+-	if (!drw || !clrnames || clrcount < 2 || !(ret = ecalloc(clrcount, sizeof(XftColor))))
++	if (!drw || !clrnames || clrcount < 2 || !(ret = ecalloc(clrcount, sizeof(Clr))))
+ 		return NULL;
+ 
+ 	for (i = 0; i < clrcount; i++)
+@@ -350,7 +337,6 @@ drw_text(Drw *drw, int x, int y, unsigne
+ 			fcpattern = FcPatternDuplicate(drw->fonts->pattern);
+ 			FcPatternAddCharSet(fcpattern, FC_CHARSET, fccharset);
+ 			FcPatternAddBool(fcpattern, FC_SCALABLE, FcTrue);
+-			FcPatternAddBool(fcpattern, FC_COLOR, FcFalse);
+ 
+ 			FcConfigSubstitute(NULL, fcpattern, FcMatchPattern);
+ 			FcDefaultSubstitute(fcpattern);
